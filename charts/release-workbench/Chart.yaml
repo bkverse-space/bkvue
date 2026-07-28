@@ -1,0 +1,11 @@
+apiVersion: v2
+name: release-workbench
+description: Read-only Argo CD, Registry, and Prometheus release workbench
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - argocd
+  - kubernetes
+  - prometheus
+  - registry

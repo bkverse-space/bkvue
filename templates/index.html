@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}镜像仓库 | 发布工作台{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Docker Distribution API v2</p><h1>镜像仓库</h1><p class="muted">共 {{ repositories|length }} 个仓库</p></div>
+  <form class="search" method="get"><input name="q" value="{{ query }}" placeholder="筛选仓库名称" autofocus><button type="submit">搜索</button></form>
+</section>
+{% if repositories %}
+<section class="table-wrap">
+  <table>
+    <thead><tr><th>仓库</th><th class="right">操作</th></tr></thead>
+    <tbody>
+      {% for repository in repositories %}
+      <tr><td><a class="repo-name" href="{{ url_for('repository_detail', repository=repository) }}">{{ repository }}</a></td><td class="right"><a class="text-link" href="{{ url_for('repository_detail', repository=repository) }}">查看标签</a></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="empty"><h2>未找到镜像仓库</h2><p>请推送镜像到 Registry，或调整当前筛选条件。</p></section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}集群状态 | 发布工作台{% endblock %}
+{% block content %}
+<section class="page-heading compact"><div><p class="eyebrow">Prometheus</p><h1>集群状态</h1><p class="muted">指标数据来自 {{ prometheus_url }}</p></div><a class="button" href="{{ url_for('node_list') }}">节点详情</a></section>
+<section class="cluster-summary"><div class="cluster-summary-label"><span>节点 Ready</span><strong>{{ node_summary }}</strong><small>Ready / 总节点数</small></div><div class="cluster-summary-note">状态基于 Prometheus 即时查询。指标数据不可用时显示“暂无数据”。</div></section>
+{% for group in metric_groups %}<section class="cluster-group"><h2>{{ group.title }}</h2><div class="cluster-metrics">{% for metric in group.metrics %}<article class="cluster-metric {{ metric.level }}"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong><i></i></article>{% endfor %}</div></section>{% endfor %}
+{% endblock %}

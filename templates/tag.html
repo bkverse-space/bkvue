@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ repository }}:{{ tag }} | Registry Console{% endblock %}
+{% block content %}
+<nav class="breadcrumb"><a href="{{ url_for('registry_index') }}">镜像仓库</a><span>/</span><a href="{{ url_for('repository_detail', repository=repository) }}">{{ repository }}</a><span>/</span><strong>{{ tag }}</strong></nav>
+<section class="page-heading compact"><div><p class="eyebrow">镜像 Manifest</p><h1>{{ repository }}<span class="tag-suffix">:{{ tag }}</span></h1><p class="muted">{{ content_type }}</p></div></section>
+<section class="details-grid">
+  <div class="detail"><span>Manifest 摘要</span><code>{{ digest or '-' }}</code></div><div class="detail"><span>架构</span><strong>{{ manifest.architecture or config.architecture or '-' }}</strong></div>
+  <div class="detail"><span>镜像总大小</span><strong>{{ total_size|size }}</strong></div><div class="detail"><span>镜像层数</span><strong>{{ manifest.layers|length }}</strong></div>
+  <div class="detail"><span>操作系统</span><strong>{{ manifest.os or config.os or '-' }}</strong></div><div class="detail"><span>镜像层合计</span><strong>{{ layer_size|size }}</strong></div>
+  {% if created %}<div class="detail"><span>创建时间</span><strong>{{ created }}</strong></div>{% endif %}
+</section>
+{% if annotations %}<section class="manifest-section"><h2>注解</h2><div class="table-wrap"><table><tbody>{% for key, value in annotations.items() %}<tr><th>{{ key }}</th><td>{{ value }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+<section class="manifest-section"><h2>镜像层</h2><div class="table-wrap"><table><thead><tr><th>摘要</th><th>媒体类型</th><th class="right">大小</th></tr></thead><tbody>{% for layer in manifest.layers|default([]) %}<tr><td><code>{{ layer.digest }}</code></td><td>{{ layer.mediaType }}</td><td class="right">{{ layer.size|size }}</td></tr>{% else %}<tr><td colspan="3" class="muted">该 Manifest 是镜像索引，或未提供镜像层。</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

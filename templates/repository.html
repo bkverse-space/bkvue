@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ repository }} | Registry Console{% endblock %}
+{% block content %}
+<nav class="breadcrumb"><a href="{{ url_for('registry_index') }}">镜像仓库</a><span>/</span><strong>{{ repository }}</strong></nav>
+<section class="page-heading compact"><div><p class="eyebrow">仓库</p><h1>{{ repository }}</h1><p class="muted">共 {{ tags|length }} 个标签</p></div></section>
+{% if tags %}
+<section class="tag-picker-panel">
+  <details class="tag-menu">
+    <summary>选择 Tag</summary>
+    <div class="tag-options">
+      {% for item in tags %}<a href="{{ url_for('tag_detail', repository=repository, tag=item.tag) }}"><span class="tag-chip">{{ item.tag }}</span>{% if item.created_at %}<span class="tag-time">构建于 {{ item.created_label }}</span>{% endif %}</a>{% endfor %}
+    </div>
+  </details>
+</section>
+<section class="table-wrap"><table>
+  <thead><tr><th>标签</th><th>摘要</th><th>镜像总大小</th><th>层数</th><th class="right">操作</th></tr></thead>
+  <tbody>{% for item in tags %}<tr>
+    <td><a class="repo-name" href="{{ url_for('tag_detail', repository=repository, tag=item.tag) }}">{{ item.tag }}</a></td>
+    <td><code title="{{ item.digest }}">{{ item.digest[:19] if item.digest else '-' }}{% if item.digest %}...{% endif %}</code></td><td>{{ item.size|size }}</td><td>{{ item.layers }}</td>
+    <td class="right actions"><a class="text-link" href="{{ url_for('tag_detail', repository=repository, tag=item.tag) }}">详情</a></td>
+  </tr>{% endfor %}</tbody>
+</table></section>
+{% else %}<section class="empty"><h2>未找到标签</h2><p>该仓库当前没有可用标签。</p></section>{% endif %}
+{% endblock %}

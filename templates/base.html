@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}发布工作台{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">W</span> 发布工作台</a>
+      <nav class="side-nav"><a href="{{ url_for('index') }}"{% if request.endpoint in ('index', 'project_detail') %} class="active"{% endif %}><span class="nav-mark"></span>项目概览</a><a href="{{ url_for('cluster_status') }}"{% if request.endpoint == 'cluster_status' %} class="active"{% endif %}><span class="nav-mark"></span>集群状态</a><a href="{{ url_for('registry_index') }}"{% if request.endpoint in ('registry_index', 'repository_detail', 'tag_detail') %} class="active"{% endif %}><span class="nav-mark"></span>镜像仓库</a></nav>
+      <div class="cluster-target"><span>单集群</span><strong>Argo CD / {{ argocd_namespace }}</strong></div>
+    </aside>
+    <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="notice {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

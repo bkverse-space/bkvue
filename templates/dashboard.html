@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}项目概览 | 发布工作台{% endblock %}
+{% block content %}
+<section class="page-heading dashboard-heading">
+  <div><p class="eyebrow">Argo CD Applications</p><h1>项目发布概览</h1><p class="muted">只读展示当前发布状态，不执行同步、回滚或配置变更。</p></div>
+  <form class="search" method="get"><input name="q" value="{{ query }}" placeholder="搜索项目或 Namespace" autofocus><button type="submit">搜索</button></form>
+</section>
+<section class="metrics" aria-label="项目状态统计">
+  <div><span>项目总数</span><strong>{{ summary.total }}</strong></div><div><span>运行正常</span><strong class="metric-good">{{ summary.ready }}</strong></div><div><span>需要关注</span><strong class="metric-attention">{{ summary.attention }}</strong></div>
+</section>
+<nav class="namespace-filters" aria-label="按 Namespace 筛选"><a href="{{ url_for('index', q=query) }}"{% if not namespace_filter %} class="active"{% endif %}>全部 Namespace</a>{% for namespace in namespaces %}<a href="{{ url_for('index', q=query, namespace=namespace) }}"{% if namespace_filter == namespace %} class="active"{% endif %}>{{ namespace }}</a>{% endfor %}</nav>
+{% if project_groups %}
+<div class="namespace-groups">
+{% for group in project_groups %}<section class="namespace-group">
+  <div class="namespace-heading"><h2>{{ group.namespace }}</h2><span>{{ group.projects|length }} 个项目</span></div>
+  <div class="project-grid">{% for project in group.projects %}<article class="project-card">
+    <div class="project-card-heading"><a href="{{ url_for('project_detail', project=project.name) }}">{{ project.name }}</a><span class="status {{ 'healthy' if project.is_ready else 'degraded' }}">{{ '运行正常' if project.is_ready else '需要关注' }}</span></div>
+    <div class="project-state"><span class="status {{ project.sync|lower }}">{{ project.sync }}</span><span class="status {{ project.health|lower }}">{{ project.health }}</span></div>
+    <dl><div><dt>当前镜像版本</dt><dd>{% if project.image_versions %}<code title="{{ project.images[0] }}">{{ project.image_versions[0] }}</code>{% if project.image_versions|length > 1 %}<span class="image-count">+{{ project.image_versions|length - 1 }}</span>{% endif %}{% else %}-{% endif %}</dd></div><div><dt>最近发布</dt><dd>{{ project.deployed_at }}</dd></div></dl>
+    <a class="text-link card-link" href="{{ url_for('project_detail', project=project.name) }}">查看项目详情</a>
+  </article>{% endfor %}</div>
+</section>{% endfor %}
+</div>
+{% else %}<section class="empty"><h2>未找到项目</h2><p>请检查 Argo CD namespace、ServiceAccount 权限或当前筛选条件。</p></section>{% endif %}
+{% endblock %}

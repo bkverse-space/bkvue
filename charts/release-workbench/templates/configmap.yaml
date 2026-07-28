@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "release-workbench.fullname" . }}
+  labels:
+    {{- include "release-workbench.labels" . | nindent 4 }}
+data:
+  ARGOCD_NAMESPACE: {{ .Values.argocd.namespace | quote }}
+  REGISTRY_URL: {{ .Values.registry.url | quote }}
+  REGISTRY_VERIFY_TLS: {{ .Values.registry.verifyTls | quote }}
+  REGISTRY_TIMEOUT: {{ .Values.registry.timeout | quote }}
+  PROMETHEUS_URL: {{ .Values.prometheus.url | quote }}
+  PROMETHEUS_VERIFY_TLS: {{ .Values.prometheus.verifyTls | quote }}
+  PROMETHEUS_TIMEOUT: {{ .Values.prometheus.timeout | quote }}

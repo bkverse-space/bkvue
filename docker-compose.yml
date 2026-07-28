@@ -1,0 +1,17 @@
+services:
+  registry-ui:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      REGISTRY_URL: ${REGISTRY_URL:-http://host.docker.internal:5000}
+      REGISTRY_VERIFY_TLS: ${REGISTRY_VERIFY_TLS:-true}
+      REGISTRY_USERNAME: ${REGISTRY_USERNAME:-}
+      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:-}
+      ARGOCD_NAMESPACE: ${ARGOCD_NAMESPACE:-argocd}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus-server.monitoring.svc:9090}
+      PROMETHEUS_VERIFY_TLS: ${PROMETHEUS_VERIFY_TLS:-true}
+      PROMETHEUS_BEARER_TOKEN: ${PROMETHEUS_BEARER_TOKEN:-}
+      SECRET_KEY: ${SECRET_KEY:-replace-this-secret}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
