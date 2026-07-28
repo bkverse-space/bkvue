@@ -1,12 +1,12 @@
-{{- define "release-workbench.name" -}}
+{{- define "bkvue.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "release-workbench.fullname" -}}
+{{- define "bkvue.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
-{{- $name := include "release-workbench.name" . }}
+{{- $name := include "bkvue.name" . }}
 {{- if contains $name .Release.Name }}
 {{- .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -15,22 +15,22 @@
 {{- end }}
 {{- end }}
 
-{{- define "release-workbench.labels" -}}
-helm.sh/chart: {{ include "release-workbench.name" . }}-{{ .Chart.Version | replace "+" "_" }}
-app.kubernetes.io/name: {{ include "release-workbench.name" . }}
+{{- define "bkvue.labels" -}}
+helm.sh/chart: {{ include "bkvue.name" . }}-{{ .Chart.Version | replace "+" "_" }}
+app.kubernetes.io/name: {{ include "bkvue.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
-{{- define "release-workbench.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "release-workbench.name" . }}
+{{- define "bkvue.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "bkvue.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{- define "release-workbench.serviceAccountName" -}}
+{{- define "bkvue.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "release-workbench.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "bkvue.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- required "serviceAccount.name is required when serviceAccount.create=false" .Values.serviceAccount.name }}
 {{- end }}

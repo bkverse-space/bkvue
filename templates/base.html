@@ -9,7 +9,7 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">W</span> 发布工作台</a>
+      <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">B</span> bkvue</a>
       <nav class="side-nav"><a href="{{ url_for('index') }}"{% if request.endpoint in ('index', 'project_detail') %} class="active"{% endif %}><span class="nav-mark"></span>项目概览</a><a href="{{ url_for('cluster_status') }}"{% if request.endpoint == 'cluster_status' %} class="active"{% endif %}><span class="nav-mark"></span>集群状态</a><a href="{{ url_for('registry_index') }}"{% if request.endpoint in ('registry_index', 'repository_detail', 'tag_detail') %} class="active"{% endif %}><span class="nav-mark"></span>镜像仓库</a></nav>
       <div class="cluster-target"><span>单集群</span><strong>Argo CD / {{ argocd_namespace }}</strong></div>
     </aside>

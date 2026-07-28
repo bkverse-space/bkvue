@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "release-workbench.fullname" . }}
+  name: {{ include "bkvue.fullname" . }}
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -27,7 +27,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "release-workbench.fullname" $ }}
+                name: {{ include "bkvue.fullname" $ }}
                 port:
                   name: http
           {{- end }}

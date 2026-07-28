@@ -1,5 +1,5 @@
 services:
-  registry-ui:
+  bkvue:
     build: .
     ports:
       - "8080:8080"

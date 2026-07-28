@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "release-workbench.fullname" . }}
+  name: {{ include "bkvue.fullname" . }}
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,4 +12,4 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "release-workbench.selectorLabels" . | nindent 4 }}
+    {{- include "bkvue.selectorLabels" . | nindent 4 }}

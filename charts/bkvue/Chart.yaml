@@ -1,5 +1,5 @@
 apiVersion: v2
-name: release-workbench
+name: bkvue
 description: Read-only Argo CD, Registry, and Prometheus release workbench
 type: application
 version: 0.1.0

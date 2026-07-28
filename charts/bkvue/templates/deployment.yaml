@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "release-workbench.fullname" . }}
+  name: {{ include "bkvue.fullname" . }}
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "release-workbench.selectorLabels" . | nindent 6 }}
+      {{- include "bkvue.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "release-workbench.selectorLabels" . | nindent 8 }}
+        {{- include "bkvue.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -21,7 +21,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ include "release-workbench.serviceAccountName" . }}
+      serviceAccountName: {{ include "bkvue.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -38,7 +38,7 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: {{ include "release-workbench.fullname" . }}
+                name: {{ include "bkvue.fullname" . }}
           {{- if or .Values.registry.auth.existingSecret .Values.prometheus.auth.existingSecret .Values.extraEnv }}
           env:
           {{- with .Values.registry.auth.existingSecret }}

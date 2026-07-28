@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: release-workbench
+  repository: bkvue
   pullPolicy: IfNotPresent
   tag: ""
 

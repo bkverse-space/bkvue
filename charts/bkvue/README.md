@@ -1,14 +1,14 @@
-# release-workbench
+# bkvue
 
 Read-only Kubernetes release workbench backed by Argo CD Application CRs, Docker Registry, and Prometheus.
 
 ## Install
 
 ```bash
-helm upgrade --install release-workbench ./charts/release-workbench \
-  --namespace release-workbench \
+helm upgrade --install bkvue ./charts/bkvue \
+  --namespace bkvue \
   --create-namespace \
-  --set image.repository=registry.example.com/release-workbench \
+  --set image.repository=registry.example.com/bkvue \
   --set image.tag=1.0.0 \
   --set registry.url=https://registry.example.com \
   --set prometheus.url=http://prometheus-server.monitoring.svc:9090

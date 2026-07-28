@@ -1,10 +1,10 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "release-workbench.fullname" . }}-argocd-applications
+  name: {{ include "bkvue.fullname" . }}-argocd-applications
   namespace: {{ .Values.argocd.namespace }}
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["argoproj.io"]
     resources: ["applications"]
@@ -13,26 +13,26 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "release-workbench.fullname" . }}-argocd-applications
+  name: {{ include "bkvue.fullname" . }}-argocd-applications
   namespace: {{ .Values.argocd.namespace }}
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "release-workbench.serviceAccountName" . }}
+    name: {{ include "bkvue.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "release-workbench.fullname" . }}-argocd-applications
+  name: {{ include "bkvue.fullname" . }}-argocd-applications
 {{- if .Values.rbac.readNodesAndPods }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "release-workbench.fullname" . }}-cluster-status
+  name: {{ include "bkvue.fullname" . }}-cluster-status
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["nodes", "pods"]
@@ -41,15 +41,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "release-workbench.fullname" . }}-cluster-status
+  name: {{ include "bkvue.fullname" . }}-cluster-status
   labels:
-    {{- include "release-workbench.labels" . | nindent 4 }}
+    {{- include "bkvue.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "release-workbench.serviceAccountName" . }}
+    name: {{ include "bkvue.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "release-workbench.fullname" . }}-cluster-status
+  name: {{ include "bkvue.fullname" . }}-cluster-status
 {{- end }}

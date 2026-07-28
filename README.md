@@ -1,6 +1,6 @@
-# 发布工作台
+# bkvue
 
-面向单 Kubernetes 集群的只读发布信息工作台。每个 Argo CD `Application` 对应一个项目，工作台从集群内的 Argo CD Application CR 读取当前发布状态，不连接 Git 平台，也不会执行同步、回滚、删除或任何配置变更。
+`bkvue` 是面向单 Kubernetes 集群的只读发布信息工作台。每个 Argo CD `Application` 对应一个项目，工作台从集群内的 Argo CD Application CR 读取当前发布状态，不连接 Git 平台，也不会执行同步、回滚、删除或任何配置变更。
 
 ## 功能
 
@@ -26,8 +26,8 @@
 先构建并推送镜像到你的镜像仓库，再修改 [k8s/workbench.yaml](k8s/workbench.yaml) 的 `image` 和 `REGISTRY_URL`：
 
 ```bash
-docker build -t registry.example.com/release-workbench:1.0.0 .
-docker push registry.example.com/release-workbench:1.0.0
+docker build -t registry.example.com/bkvue:1.0.0 .
+docker push registry.example.com/bkvue:1.0.0
 kubectl apply -f k8s/workbench.yaml
 ```
 
@@ -37,19 +37,19 @@ kubectl apply -f k8s/workbench.yaml
 
 ## Helm 部署
 
-Chart 位于 [charts/release-workbench](charts/release-workbench)。示例：
+Chart 位于 [charts/bkvue](charts/bkvue)。示例：
 
 ```bash
-helm upgrade --install release-workbench ./charts/release-workbench \
-  --namespace release-workbench \
+helm upgrade --install bkvue ./charts/bkvue \
+  --namespace bkvue \
   --create-namespace \
-  --set image.repository=registry.example.com/release-workbench \
+  --set image.repository=registry.example.com/bkvue \
   --set image.tag=1.0.0 \
   --set registry.url=https://registry.example.com \
   --set prometheus.url=http://prometheus-server.monitoring.svc:9090
 ```
 
-详见 Chart 的 [README](charts/release-workbench/README.md)。
+详见 Chart 的 [README](charts/bkvue/README.md)。
 
 ## 本地运行
 
