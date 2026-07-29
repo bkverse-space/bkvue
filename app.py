@@ -334,6 +334,8 @@ class ClusterKubernetesClient:
             )
         except ApiException as exc:
             raise RegistryError(f"无法读取 Pod 日志: {exc.reason}", exc.status) from exc
+        logs = logs or "该条件下没有日志输出。"
+        container_statuses = pod.status.container_statuses or []
         return {
             "namespace": namespace,
             "name": name,
@@ -341,7 +343,14 @@ class ClusterKubernetesClient:
             "container": selected_container,
             "tail_lines": tail_lines,
             "previous": previous,
-            "logs": logs or "该条件下没有日志输出。",
+            "logs": logs,
+            "line_count": len(logs.splitlines()),
+            "phase": pod.status.phase or "Unknown",
+            "node_name": pod.spec.node_name or "-",
+            "pod_ip": pod.status.pod_ip or "-",
+            "restarts": sum(status.restart_count or 0 for status in container_statuses),
+            "started_at": format_created(pod.status.start_time) if pod.status.start_time else "-",
+            "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
         }
 
     def project_pods(self, resources):
