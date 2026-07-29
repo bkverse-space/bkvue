@@ -32,7 +32,7 @@ docker push registry.example.com/bkvue:1.0.0
 kubectl apply -f k8s/workbench.yaml
 ```
 
-清单创建的 ServiceAccount 在 `argocd` namespace 拥有 `applications.argoproj.io` 的 `get/list/watch` 权限，并通过 ClusterRole 拥有 `nodes`、`pods` 的 `get/list/watch` 与 `pods/log` 的 `get` 权限。这些权限均为只读。若 Argo CD 不在 `argocd` namespace，请同时修改 Role、RoleBinding 与 `ARGOCD_NAMESPACE`。
+清单创建的 ServiceAccount 在 `argocd` namespace 拥有 `applications.argoproj.io` 的 `get/list/watch` 权限，并通过 ClusterRole 拥有 `nodes`、`pods`、Deployment、ReplicaSet、StatefulSet、DaemonSet、Job 的 `get/list/watch` 与 `pods/log` 的 `get` 权限。这些权限均为只读。若 Argo CD 不在 `argocd` namespace，请同时修改 Role、RoleBinding 与 `ARGOCD_NAMESPACE`。
 
 默认 Prometheus 地址为 `http://prometheus-server.monitoring.svc:9090`。请按实际 Service 地址修改 `PROMETHEUS_URL`。如果 Prometheus 启用认证，将 Bearer Token 以环境变量或 Kubernetes Secret 注入 `PROMETHEUS_BEARER_TOKEN`；工作台不会写入 Prometheus。
 

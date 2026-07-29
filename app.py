@@ -272,6 +272,8 @@ class ClusterKubernetesClient:
     def __init__(self):
         load_kubernetes_config()
         self.api = kube_client.CoreV1Api()
+        self.apps_api = kube_client.AppsV1Api()
+        self.batch_api = kube_client.BatchV1Api()
 
     def nodes(self):
         try:
@@ -341,6 +343,93 @@ class ClusterKubernetesClient:
             "previous": previous,
             "logs": logs or "该条件下没有日志输出。",
         }
+
+    def project_pods(self, resources):
+        """Resolve Argo-managed workloads to their runtime Pods via owner references."""
+        pod_cache = {}
+        replica_set_cache = {}
+        records = {}
+
+        def namespace_pods(namespace):
+            if namespace not in pod_cache:
+                try:
+                    pod_cache[namespace] = self.api.list_namespaced_pod(namespace).items
+                except ApiException as exc:
+                    raise RegistryError(f"无法读取 Namespace {namespace} 中的 Pod: {exc.reason}", exc.status) from exc
+            return pod_cache[namespace]
+
+        def namespace_replica_sets(namespace):
+            if namespace not in replica_set_cache:
+                try:
+                    replica_set_cache[namespace] = self.apps_api.list_namespaced_replica_set(namespace).items
+                except ApiException as exc:
+                    raise RegistryError(f"无法读取 Namespace {namespace} 中的 ReplicaSet: {exc.reason}", exc.status) from exc
+            return replica_set_cache[namespace]
+
+        def owner_uids(resource):
+            return {reference.uid for reference in (resource.metadata.owner_references or []) if reference.uid}
+
+        def add_pod(pod, workload):
+            key = (pod.metadata.namespace, pod.metadata.name)
+            record = records.setdefault(
+                key,
+                {
+                    "namespace": pod.metadata.namespace,
+                    "name": pod.metadata.name,
+                    "phase": pod.status.phase or "Unknown",
+                    "restarts": sum(status.restart_count or 0 for status in (pod.status.container_statuses or [])),
+                    "workloads": set(),
+                },
+            )
+            record["workloads"].add(workload)
+
+        for resource in resources:
+            kind = resource.get("kind")
+            namespace = resource.get("namespace")
+            name = resource.get("name")
+            if not namespace or not name:
+                continue
+            pods = namespace_pods(namespace)
+            workload = f"{kind}/{name}"
+            try:
+                if kind == "Pod":
+                    for pod in pods:
+                        if pod.metadata.name == name:
+                            add_pod(pod, workload)
+                elif kind == "Deployment":
+                    deployment = self.apps_api.read_namespaced_deployment(name, namespace)
+                    replica_set_uids = {
+                        replica_set.metadata.uid
+                        for replica_set in namespace_replica_sets(namespace)
+                        if deployment.metadata.uid in owner_uids(replica_set)
+                    }
+                    for pod in pods:
+                        if owner_uids(pod) & replica_set_uids:
+                            add_pod(pod, workload)
+                elif kind == "StatefulSet":
+                    stateful_set = self.apps_api.read_namespaced_stateful_set(name, namespace)
+                    for pod in pods:
+                        if stateful_set.metadata.uid in owner_uids(pod):
+                            add_pod(pod, workload)
+                elif kind == "DaemonSet":
+                    daemon_set = self.apps_api.read_namespaced_daemon_set(name, namespace)
+                    for pod in pods:
+                        if daemon_set.metadata.uid in owner_uids(pod):
+                            add_pod(pod, workload)
+                elif kind == "Job":
+                    job = self.batch_api.read_namespaced_job(name, namespace)
+                    for pod in pods:
+                        if job.metadata.uid in owner_uids(pod):
+                            add_pod(pod, workload)
+            except ApiException as exc:
+                if exc.status != 404:
+                    raise RegistryError(f"无法解析 {workload} 的 Pod: {exc.reason}", exc.status) from exc
+
+        result = []
+        for record in records.values():
+            record["workloads"] = sorted(record["workloads"])
+            result.append(record)
+        return sorted(result, key=lambda pod: (pod["namespace"], pod["name"]))
 
     @staticmethod
     def _node_summary(node):
@@ -569,7 +658,7 @@ def project_detail(project):
 @registry_view
 def project_logs(project):
     application = argocd().application(project)
-    pods = [resource for resource in application["resources"] if resource["kind"] == "Pod"]
+    pods = cluster_kubernetes().project_pods(application["resources"])
     return render_template("project-logs.html", project=application, pods=pods)
 
 
