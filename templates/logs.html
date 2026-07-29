@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ log.name }} 日志 | bkvue{% endblock %}
 {% block content %}
-<nav class="breadcrumb"><a href="{{ url_for('node_list') }}">节点详情</a><span>/</span><strong>{{ log.namespace }}/{{ log.name }}</strong></nav>
+<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">Pod 日志</a><span>/</span>{% endif %}<strong>{{ log.namespace }}/{{ log.name }}</strong></nav>
 <section class="page-heading compact"><div><p class="eyebrow">Pod Logs</p><h1>{{ log.name }}</h1><p class="muted">Namespace: {{ log.namespace }}</p></div></section>
 <form class="log-controls" method="get"><label>容器<select name="container">{% for container in log.containers %}<option value="{{ container }}"{% if container == log.container %} selected{% endif %}>{{ container }}</option>{% endfor %}</select></label><label>尾行<select name="tail">{% for size in [100, 500, 1000, 5000] %}<option value="{{ size }}"{% if size == log.tail_lines %} selected{% endif %}>{{ size }} 行</option>{% endfor %}</select></label><label class="checkbox-label"><input type="checkbox" name="previous" value="1"{% if log.previous %} checked{% endif %}> 前一实例</label><button type="submit">刷新日志</button></form>
 <section class="log-panel"><div class="log-panel-header"><span>{{ log.container }}</span><span>最近 {{ log.tail_lines }} 行</span></div><pre>{{ log.logs }}</pre></section>

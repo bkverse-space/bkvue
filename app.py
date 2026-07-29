@@ -756,7 +756,7 @@ def pod_logs(namespace, pod):
         tail_lines=log_tail_lines(request.args.get("tail", 500)),
         previous=request.args.get("previous") == "1",
     )
-    return render_template("logs.html", log=log)
+    return render_template("logs.html", log=log, project_name=request.args.get("project", ""))
 
 
 @app.get("/registry")
