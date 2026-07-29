@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Git tag to publish to GHCR
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m py_compile app.py
+      - run: docker compose config
+      - run: docker build --build-arg VERSION=ci-${{ github.sha }} -t bkvue:ci .
+
+  publish:
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          image="${IMAGE,,}"
+          docker build --build-arg VERSION="$TAG" -t "$image:$TAG" -t "$image:latest" .
+          docker push "$image:$TAG"
+          docker push "$image:latest"

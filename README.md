@@ -36,21 +36,11 @@ kubectl apply -f k8s/workbench.yaml
 
 默认 Prometheus 地址为 `http://prometheus-server.monitoring.svc:9090`。请按实际 Service 地址修改 `PROMETHEUS_URL`。如果 Prometheus 启用认证，将 Bearer Token 以环境变量或 Kubernetes Secret 注入 `PROMETHEUS_BEARER_TOKEN`；工作台不会写入 Prometheus。
 
-## Helm 部署
+## CI 与镜像发布
 
-Chart 位于 [charts/bkvue](charts/bkvue)。示例：
+GitHub Actions 会在 Pull Request 与 `main` 推送时校验 Python 语法、Docker Compose 配置并构建镜像。推送形如 `v0.1.1` 的 Git tag 时，会将镜像发布到 `ghcr.io/bkverse-space/bkvue`，标签为该 Git tag 与 `latest`。
 
-```bash
-helm upgrade --install bkvue ./charts/bkvue \
-  --namespace bkvue \
-  --create-namespace \
-  --set image.repository=registry.example.com/bkvue \
-  --set image.tag=v0.1.0 \
-  --set registry.url=https://registry.example.com \
-  --set prometheus.url=http://prometheus-server.monitoring.svc:9090
-```
-
-详见 Chart 的 [README](charts/bkvue/README.md)。
+历史 tag 可从 Actions 页面通过 `workflow_dispatch` 手动补发。
 
 ## 本地运行
 
