@@ -82,7 +82,7 @@ spec:
       serviceAccountName: bkvue
       containers:
         - name: web
-          image: bkvue:latest
+          image: bkvue:v0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

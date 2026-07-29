@@ -27,8 +27,8 @@
 先构建并推送镜像到你的镜像仓库，再修改 [k8s/workbench.yaml](k8s/workbench.yaml) 的 `image` 和 `REGISTRY_URL`：
 
 ```bash
-docker build -t registry.example.com/bkvue:1.0.0 .
-docker push registry.example.com/bkvue:1.0.0
+docker build --build-arg VERSION=v0.1.0 -t registry.example.com/bkvue:v0.1.0 .
+docker push registry.example.com/bkvue:v0.1.0
 kubectl apply -f k8s/workbench.yaml
 ```
 
@@ -45,7 +45,7 @@ helm upgrade --install bkvue ./charts/bkvue \
   --namespace bkvue \
   --create-namespace \
   --set image.repository=registry.example.com/bkvue \
-  --set image.tag=1.0.0 \
+  --set image.tag=v0.1.0 \
   --set registry.url=https://registry.example.com \
   --set prometheus.url=http://prometheus-server.monitoring.svc:9090
 ```

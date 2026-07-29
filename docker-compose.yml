@@ -1,6 +1,7 @@
 services:
   bkvue:
     build: .
+    image: bkvue:v0.1.0
     ports:
       - "8080:8080"
     environment:

@@ -3,7 +3,7 @@ name: bkvue
 description: Read-only Argo CD, Registry, and Prometheus release workbench
 type: application
 version: 0.1.0
-appVersion: "1.0.0"
+appVersion: "v0.1.0"
 keywords:
   - argocd
   - kubernetes
