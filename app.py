@@ -565,6 +565,14 @@ def project_detail(project):
     return render_template("project.html", project=argocd().application(project))
 
 
+@app.get("/projects/<project>/logs")
+@registry_view
+def project_logs(project):
+    application = argocd().application(project)
+    pods = [resource for resource in application["resources"] if resource["kind"] == "Pod"]
+    return render_template("project-logs.html", project=application, pods=pods)
+
+
 @app.get("/cluster")
 @registry_view
 def cluster_status():
