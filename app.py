@@ -754,8 +754,60 @@ def project_detail(project):
 @registry_view
 def project_logs(project):
     application = argocd().application(project)
-    pods = cluster_kubernetes().project_pods(application["resources"])
-    return render_template("project-logs.html", project=application, pods=pods)
+    client = cluster_kubernetes()
+    pods = client.project_pods(application["resources"])
+    workload_options = [
+        {
+            "target": f"{resource['namespace']}|{resource['kind']}|{resource['name']}",
+            "label": f"{resource['kind']}/{resource['name']}",
+        }
+        for resource in application["resources"]
+        if resource["kind"] in {"Deployment", "StatefulSet", "DaemonSet", "Job"}
+    ]
+    pod_options = [
+        {
+            "target": f"{pod['namespace']}|{pod['name']}",
+            "label": f"{pod['namespace']}/{pod['name']}",
+        }
+        for pod in pods
+    ]
+    mode = request.args.get("mode", "workload")
+    if mode not in {"workload", "pod"}:
+        mode = "workload"
+    options = workload_options if mode == "workload" else pod_options
+    target = request.args.get("target") or (options[0]["target"] if options else "")
+    if target not in {option["target"] for option in options}:
+        target = options[0]["target"] if options else ""
+    log = None
+    if target and mode == "workload":
+        namespace, kind, name = target.split("|", 2)
+        log = client.workload_logs(
+            namespace,
+            kind,
+            name,
+            container=request.args.get("container"),
+            tail_lines=log_tail_lines(request.args.get("tail", 100)),
+            previous=request.args.get("previous") == "1",
+        )
+    elif target:
+        namespace, name = target.split("|", 1)
+        log = client.pod_logs(
+            namespace,
+            name,
+            container=request.args.get("container"),
+            tail_lines=log_tail_lines(request.args.get("tail", 500)),
+            previous=request.args.get("previous") == "1",
+        )
+    return render_template(
+        "project-logs.html",
+        project=application,
+        mode=mode,
+        target=target,
+        options=options,
+        has_workloads=bool(workload_options),
+        has_pods=bool(pod_options),
+        log=log,
+    )
 
 
 @app.get("/cluster")

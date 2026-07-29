@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ log.name }} 工作负载日志 | bkvue{% endblock %}
 {% block content %}
-<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">运行日志</a><span>/</span>{% endif %}<strong>{{ log.kind }}/{{ log.name }}</strong></nav>
+<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">工作负载日志</a><span>/</span>{% endif %}<strong>{{ log.kind }}/{{ log.name }}</strong></nav>
 <section class="log-heading"><div><p class="eyebrow">Workload Logs</p><h1>{{ log.name }}</h1><p class="muted"><span class="namespace-chip">{{ log.namespace }}</span><span class="log-read-at">读取于 {{ log.read_at }}</span></p></div><span class="deployment-log-badge">{{ log.pods|length }} 个当前 Pod</span></section>
 <section class="deployment-log-note"><strong>{{ log.kind }} 聚合</strong><span>日志按 Pod 分开保留，避免多副本输出交错；选择 Pod 后可继续进入单实例日志。</span></section>
 <section class="log-workbench">
