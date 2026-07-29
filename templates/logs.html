@@ -23,11 +23,12 @@
   <div class="log-utility-bar">
     <label class="log-search" for="log-search"><span>搜索当前日志</span><input id="log-search" type="search" placeholder="关键字、错误码或请求 ID" autocomplete="off"></label>
     <span id="log-match-count" class="log-match-count">显示 {{ log.line_count }} 行</span>
-    <label class="follow-toggle"><input id="log-follow" type="checkbox"> 跟随底部</label>
+    <label class="follow-toggle"><input id="log-follow" type="checkbox"{% if not log.previous %} checked{% else %} disabled{% endif %}> 实时跟随</label>
+    <span id="log-live-state" class="live-state{% if log.previous %} paused{% endif %}">{% if log.previous %}历史快照{% else %}正在连接{% endif %}</span>
     <button id="copy-logs" class="secondary-button" type="button">复制日志</button>
   </div>
   <section class="log-panel" aria-label="日志内容">
-    <div class="log-panel-header"><span><i></i>{{ log.container }}</span><span><b>{{ log.line_count }}</b> 行 <em>只读快照</em></span></div>
+    <div class="log-panel-header"><span><i></i>{{ log.container }}</span><span><b id="log-line-count">{{ log.line_count }}</b> 行 <em>当前实例</em></span></div>
     <pre id="log-content" tabindex="0">{{ log.logs }}</pre>
   </section>
 </section>
@@ -37,18 +38,31 @@
     const search = document.getElementById("log-search");
     const count = document.getElementById("log-match-count");
     const follow = document.getElementById("log-follow");
+    const state = document.getElementById("log-live-state");
+    const lineCount = document.getElementById("log-line-count");
     const copy = document.getElementById("copy-logs");
-    const original = source.textContent;
-    const lines = original.split("\n");
+    const lines = source.textContent.split("\n");
+    let stream;
     const render = () => {
       const query = search.value.trim().toLowerCase();
       const visible = query ? lines.filter((line) => line.toLowerCase().includes(query)) : lines;
       source.textContent = visible.join("\n");
       count.textContent = query ? `匹配 ${visible.length} / ${lines.length} 行` : `显示 ${lines.length} 行`;
-      if (follow.checked) source.scrollTop = source.scrollHeight;
+      lineCount.textContent = lines.length;
+      source.scrollTop = source.scrollHeight;
+    };
+    const stop = () => { stream?.close(); stream = null; };
+    const start = () => {
+      if (!follow.checked || {{ 'true' if log.previous else 'false' }}) return;
+      stop(); state.textContent = "正在连接"; state.className = "live-state";
+      stream = new EventSource("{{ url_for('pod_log_stream', namespace=log.namespace, pod=log.name, container=log.container) }}");
+      stream.onopen = () => { state.textContent = "实时跟随"; state.className = "live-state"; };
+      stream.onmessage = (event) => { lines.push(event.data); render(); };
+      stream.addEventListener("status", (event) => { state.textContent = event.data; state.className = "live-state paused"; });
+      stream.onerror = () => { state.textContent = "正在重连"; state.className = "live-state paused"; };
     };
     search.addEventListener("input", render);
-    follow.addEventListener("change", render);
+    follow.addEventListener("change", () => { if (follow.checked) start(); else { stop(); state.textContent = "已暂停"; state.className = "live-state paused"; } });
     copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(source.textContent);
@@ -56,6 +70,9 @@
         window.setTimeout(() => { copy.textContent = "复制日志"; }, 1600);
       } catch (_) { source.focus(); }
     });
+    window.addEventListener("beforeunload", stop);
+    render();
+    start();
   })();
 </script>
 {% endblock %}

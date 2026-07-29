@@ -6,7 +6,7 @@ from functools import wraps
 from urllib.parse import quote
 
 import requests
-from flask import Flask, jsonify, render_template, request, url_for
+from flask import Flask, Response, jsonify, render_template, request, stream_with_context, url_for
 from kubernetes import client as kube_client
 from kubernetes import config as kube_config
 from kubernetes.client.exceptions import ApiException
@@ -352,6 +352,52 @@ class ClusterKubernetesClient:
             "started_at": format_created(pod.status.start_time) if pod.status.start_time else "-",
             "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
         }
+
+    def stream_pod_logs(self, namespace, name, container):
+        """Yield a short-lived Kubernetes log follow stream as server-sent events."""
+        try:
+            pod = self.api.read_namespaced_pod(name, namespace)
+        except ApiException as exc:
+            message = "未找到该 Pod。" if exc.status == 404 else f"无法读取 Pod: {exc.reason}"
+            raise RegistryError(message, exc.status) from exc
+        containers = [item.name for item in (pod.spec.containers or [])]
+        containers.extend(item.name for item in (pod.spec.init_containers or []))
+        if container not in containers:
+            raise RegistryError("指定的容器不属于该 Pod。", 400)
+
+        def events():
+            response = None
+            buffer = ""
+            yield "retry: 1000\n\n"
+            try:
+                # End periodically so reverse proxies cannot leave an idle stream open forever.
+                response = self.api.read_namespaced_pod_log(
+                    name,
+                    namespace,
+                    container=container,
+                    follow=True,
+                    tail_lines=0,
+                    timestamps=True,
+                    timeout_seconds=20,
+                    _preload_content=False,
+                )
+                while True:
+                    chunk = response.read(4096, decode_content=True)
+                    if not chunk:
+                        break
+                    buffer += chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        yield f"data: {line}\n\n"
+                if buffer:
+                    yield f"data: {buffer}\n\n"
+            except ApiException as exc:
+                yield f"event: status\ndata: 无法读取实时日志: {exc.reason}\n\n"
+            finally:
+                if response:
+                    response.close()
+
+        return events()
 
     def project_pods(self, resources):
         """Resolve Argo-managed workloads to their runtime Pods via owner references."""
@@ -816,6 +862,19 @@ def pod_logs(namespace, pod):
         previous=request.args.get("previous") == "1",
     )
     return render_template("logs.html", log=log, project_name=request.args.get("project", ""))
+
+
+@app.get("/logs/<namespace>/<pod>/stream")
+@registry_view
+def pod_log_stream(namespace, pod):
+    if request.args.get("previous") == "1":
+        raise RegistryError("前一实例日志不支持实时跟随。", 400)
+    events = cluster_kubernetes().stream_pod_logs(namespace, pod, request.args.get("container", ""))
+    return Response(
+        stream_with_context(events),
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/registry")
