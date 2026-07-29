@@ -353,6 +353,72 @@ class ClusterKubernetesClient:
             "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
         }
 
+    def deployment_logs(self, namespace, name, container=None, tail_lines=500, previous=False):
+        """Read a Deployment's current Pods without interleaving their log streams."""
+        try:
+            deployment = self.apps_api.read_namespaced_deployment(name, namespace)
+            replica_sets = self.apps_api.list_namespaced_replica_set(namespace).items
+            pods = self.api.list_namespaced_pod(namespace).items
+        except ApiException as exc:
+            message = "未找到该 Deployment。" if exc.status == 404 else f"无法读取 Deployment: {exc.reason}"
+            raise RegistryError(message, exc.status) from exc
+
+        def owner_uids(resource):
+            return {reference.uid for reference in (resource.metadata.owner_references or []) if reference.uid}
+
+        replica_set_uids = {
+            replica_set.metadata.uid
+            for replica_set in replica_sets
+            if deployment.metadata.uid in owner_uids(replica_set)
+        }
+        pods = sorted(
+            [pod for pod in pods if owner_uids(pod) & replica_set_uids],
+            key=lambda pod: pod.metadata.name,
+        )
+        containers = list(dict.fromkeys(item.name for pod in pods for item in (pod.spec.containers or [])))
+        if container and container not in containers:
+            raise RegistryError("指定的容器不属于该 Deployment 的当前 Pod。", 400)
+        selected_container = container or (containers[0] if containers else None)
+        records = []
+        for pod in pods:
+            pod_containers = {item.name for item in (pod.spec.containers or [])}
+            record = {
+                "name": pod.metadata.name,
+                "phase": pod.status.phase or "Unknown",
+                "restarts": sum(status.restart_count or 0 for status in (pod.status.container_statuses or [])),
+                "node_name": pod.spec.node_name or "-",
+                "has_container": selected_container in pod_containers if selected_container else False,
+            }
+            if not record["has_container"]:
+                record["logs"] = "该 Pod 不包含当前选择的容器。"
+                record["line_count"] = 0
+            else:
+                try:
+                    logs = self.api.read_namespaced_pod_log(
+                        pod.metadata.name,
+                        namespace,
+                        container=selected_container,
+                        tail_lines=tail_lines,
+                        timestamps=True,
+                        previous=previous,
+                    ) or "该条件下没有日志输出。"
+                    record["logs"] = logs
+                    record["line_count"] = len(logs.splitlines())
+                except ApiException as exc:
+                    record["logs"] = f"无法读取该 Pod 日志: {exc.reason}"
+                    record["line_count"] = 0
+            records.append(record)
+        return {
+            "namespace": namespace,
+            "name": name,
+            "containers": containers,
+            "container": selected_container,
+            "tail_lines": tail_lines,
+            "previous": previous,
+            "pods": records,
+            "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
+        }
+
     def project_pods(self, resources):
         """Resolve Argo-managed workloads to their runtime Pods via owner references."""
         pod_cache = {}
@@ -766,6 +832,19 @@ def pod_logs(namespace, pod):
         previous=request.args.get("previous") == "1",
     )
     return render_template("logs.html", log=log, project_name=request.args.get("project", ""))
+
+
+@app.get("/logs/<namespace>/deployments/<deployment>")
+@registry_view
+def deployment_logs(namespace, deployment):
+    log = cluster_kubernetes().deployment_logs(
+        namespace,
+        deployment,
+        container=request.args.get("container"),
+        tail_lines=log_tail_lines(request.args.get("tail", 100)),
+        previous=request.args.get("previous") == "1",
+    )
+    return render_template("deployment-logs.html", log=log, project_name=request.args.get("project", ""))
 
 
 @app.get("/registry")
