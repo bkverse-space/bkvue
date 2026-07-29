@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ log.name }} 日志 | bkvue{% endblock %}
 {% block content %}
-<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">Pod 日志</a><span>/</span>{% endif %}<strong>{{ log.namespace }}/{{ log.name }}</strong></nav>
+<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">运行日志</a><span>/</span>{% endif %}<strong>{{ log.namespace }}/{{ log.name }}</strong></nav>
 <section class="log-heading">
   <div><p class="eyebrow">Pod Logs</p><h1>{{ log.name }}</h1><p class="muted"><span class="namespace-chip">{{ log.namespace }}</span><span class="log-read-at">读取于 {{ log.read_at }}</span></p></div>
   <span class="status {{ log.phase|lower }}">{{ log.phase }}</span>

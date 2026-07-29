@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ log.name }} 工作负载日志 | bkvue{% endblock %}
 {% block content %}
-<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">Pod 日志</a><span>/</span>{% endif %}<strong>Deployment/{{ log.name }}</strong></nav>
-<section class="log-heading"><div><p class="eyebrow">Deployment Logs</p><h1>{{ log.name }}</h1><p class="muted"><span class="namespace-chip">{{ log.namespace }}</span><span class="log-read-at">读取于 {{ log.read_at }}</span></p></div><span class="deployment-log-badge">{{ log.pods|length }} 个当前 Pod</span></section>
-<section class="deployment-log-note"><strong>工作负载聚合</strong><span>日志按 Pod 分开保留，避免多副本输出交错；选择 Pod 后可继续进入单实例日志。</span></section>
+<nav class="breadcrumb">{% if project_name %}<a href="{{ url_for('index') }}">项目概览</a><span>/</span><a href="{{ url_for('project_detail', project=project_name) }}">{{ project_name }}</a><span>/</span><a href="{{ url_for('project_logs', project=project_name) }}">运行日志</a><span>/</span>{% endif %}<strong>{{ log.kind }}/{{ log.name }}</strong></nav>
+<section class="log-heading"><div><p class="eyebrow">Workload Logs</p><h1>{{ log.name }}</h1><p class="muted"><span class="namespace-chip">{{ log.namespace }}</span><span class="log-read-at">读取于 {{ log.read_at }}</span></p></div><span class="deployment-log-badge">{{ log.pods|length }} 个当前 Pod</span></section>
+<section class="deployment-log-note"><strong>{{ log.kind }} 聚合</strong><span>日志按 Pod 分开保留，避免多副本输出交错；选择 Pod 后可继续进入单实例日志。</span></section>
 <section class="log-workbench">
   <form class="log-controls" method="get">
     {% if project_name %}<input type="hidden" name="project" value="{{ project_name }}">{% endif %}
@@ -17,8 +17,8 @@
     {% for pod in log.pods %}<button class="deployment-pod-tab{% if loop.first %} active{% endif %}" type="button" role="tab" data-pod-tab="{{ loop.index0 }}"><span><code>{{ pod.name }}</code><small>{{ pod.node_name }}</small></span><span class="status {{ pod.phase|lower }}">{{ pod.phase }}</span>{% if pod.restarts %}<b>{{ pod.restarts }} 次重启</b>{% endif %}</button>{% endfor %}
   </div>
   <div class="log-utility-bar deployment-utility"><label class="log-search" for="log-search"><span>搜索当前 Pod 日志</span><input id="log-search" type="search" placeholder="关键字、错误码或请求 ID" autocomplete="off"></label><span id="log-match-count" class="log-match-count"></span><label class="follow-toggle"><input id="log-follow" type="checkbox"> 跟随底部</label><button id="copy-logs" class="secondary-button" type="button">复制日志</button></div>
-  {% for pod in log.pods %}<section class="deployment-log-panel{% if not loop.first %} hidden{% endif %}" data-pod-panel="{{ loop.index0 }}"><div class="log-panel-header"><span><i></i>{{ pod.name }}</span><span><b data-line-count>{{ pod.line_count }}</b> 行 <em>{% if pod.has_container %}{{ log.container }}{% else %}容器不可用{% endif %}</em></span></div><pre tabindex="0">{{ pod.logs }}</pre><div class="deployment-log-footer"><span>节点：<code>{{ pod.node_name }}</code></span><a class="text-link" href="{{ url_for('pod_logs', namespace=log.namespace, pod=pod.name, project=project_name, container=log.container, tail=log.tail_lines) }}">查看单个 Pod 日志</a></div></section>{% endfor %}
-  {% else %}<section class="empty compact-empty"><p>该 Deployment 当前没有可读取日志的 Pod。</p></section>{% endif %}
+  {% for pod in log.pods %}<section class="deployment-log-panel{% if not loop.first %} hidden{% endif %}" data-pod-panel="{{ loop.index0 }}"><div class="log-panel-header"><span><i></i>{{ pod.name }}</span><span><b data-line-count>{{ pod.line_count }}</b> 行 <em>{% if pod.has_container %}{{ log.container }}{% else %}容器不可用{% endif %}</em></span></div><pre tabindex="0">{{ pod.logs }}</pre><div class="deployment-log-footer"><span>节点：<code>{{ pod.node_name }}</code></span>{% if pod.has_container %}<a class="text-link" href="{{ url_for('pod_logs', namespace=log.namespace, pod=pod.name, project=project_name, container=log.container, tail=log.tail_lines) }}">查看单个 Pod 日志</a>{% endif %}</div></section>{% endfor %}
+  {% else %}<section class="empty compact-empty"><p>该 {{ log.kind }} 当前没有可读取日志的 Pod。</p></section>{% endif %}
 </section>
 <script>
   (() => {

@@ -8,7 +8,7 @@
 - 项目详情：当前镜像、发布历史与 Argo CD Application 状态
 - 集群总览：Prometheus 提供的节点、资源使用率和工作负载异常指标
 - 节点详情：节点 Condition、容量、实时利用率和调度 Pod
-- 工作负载日志：直接查看 Deployment 的当前 Pod 集合，按 Pod 切换；也支持单个 Pod 的容器、最近 100/500/1000/5000 行与前一实例日志
+- 工作负载日志：直接查看 Deployment、StatefulSet、DaemonSet、Job 的当前 Pod 集合，按 Pod 切换；也支持单个 Pod 的容器、最近 100/500/1000/5000 行与前一实例日志
 - 镜像仓库：浏览 Docker Registry 的仓库、tag、镜像大小、镜像层和构建时间
 - 全部时间以 UTC+8 显示
 

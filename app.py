@@ -353,31 +353,47 @@ class ClusterKubernetesClient:
             "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
         }
 
-    def deployment_logs(self, namespace, name, container=None, tail_lines=500, previous=False):
-        """Read a Deployment's current Pods without interleaving their log streams."""
+    def workload_logs(self, namespace, kind, name, container=None, tail_lines=500, previous=False):
+        """Read a workload's current Pods without interleaving their log streams."""
+        kinds = {
+            "deployment": "Deployment",
+            "statefulset": "StatefulSet",
+            "daemonset": "DaemonSet",
+            "job": "Job",
+        }
+        resource_kind = kinds.get(kind.lower())
+        if not resource_kind:
+            raise RegistryError("仅支持 Deployment、StatefulSet、DaemonSet 和 Job 的聚合日志。", 400)
         try:
-            deployment = self.apps_api.read_namespaced_deployment(name, namespace)
-            replica_sets = self.apps_api.list_namespaced_replica_set(namespace).items
             pods = self.api.list_namespaced_pod(namespace).items
+            if resource_kind == "Deployment":
+                workload = self.apps_api.read_namespaced_deployment(name, namespace)
+                replica_sets = self.apps_api.list_namespaced_replica_set(namespace).items
+            elif resource_kind == "StatefulSet":
+                workload = self.apps_api.read_namespaced_stateful_set(name, namespace)
+                replica_sets = []
+            elif resource_kind == "DaemonSet":
+                workload = self.apps_api.read_namespaced_daemon_set(name, namespace)
+                replica_sets = []
+            else:
+                workload = self.batch_api.read_namespaced_job(name, namespace)
+                replica_sets = []
         except ApiException as exc:
-            message = "未找到该 Deployment。" if exc.status == 404 else f"无法读取 Deployment: {exc.reason}"
+            message = f"未找到该 {resource_kind or '工作负载'}。" if exc.status == 404 else f"无法读取 {resource_kind or '工作负载'}: {exc.reason}"
             raise RegistryError(message, exc.status) from exc
 
         def owner_uids(resource):
             return {reference.uid for reference in (resource.metadata.owner_references or []) if reference.uid}
 
-        replica_set_uids = {
-            replica_set.metadata.uid
-            for replica_set in replica_sets
-            if deployment.metadata.uid in owner_uids(replica_set)
-        }
+        replica_set_uids = {replica_set.metadata.uid for replica_set in replica_sets if workload.metadata.uid in owner_uids(replica_set)}
+        workload_uids = replica_set_uids if resource_kind == "Deployment" else {workload.metadata.uid}
         pods = sorted(
-            [pod for pod in pods if owner_uids(pod) & replica_set_uids],
+            [pod for pod in pods if owner_uids(pod) & workload_uids],
             key=lambda pod: pod.metadata.name,
         )
         containers = list(dict.fromkeys(item.name for pod in pods for item in (pod.spec.containers or [])))
         if container and container not in containers:
-            raise RegistryError("指定的容器不属于该 Deployment 的当前 Pod。", 400)
+            raise RegistryError(f"指定的容器不属于该 {resource_kind} 的当前 Pod。", 400)
         selected_container = container or (containers[0] if containers else None)
         records = []
         for pod in pods:
@@ -410,6 +426,7 @@ class ClusterKubernetesClient:
             records.append(record)
         return {
             "namespace": namespace,
+            "kind": resource_kind,
             "name": name,
             "containers": containers,
             "container": selected_container,
@@ -418,6 +435,10 @@ class ClusterKubernetesClient:
             "pods": records,
             "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
         }
+
+    def deployment_logs(self, namespace, name, container=None, tail_lines=500, previous=False):
+        """Compatibility wrapper for the original Deployment log route."""
+        return self.workload_logs(namespace, "deployment", name, container, tail_lines, previous)
 
     def project_pods(self, resources):
         """Resolve Argo-managed workloads to their runtime Pods via owner references."""
@@ -840,6 +861,20 @@ def deployment_logs(namespace, deployment):
     log = cluster_kubernetes().deployment_logs(
         namespace,
         deployment,
+        container=request.args.get("container"),
+        tail_lines=log_tail_lines(request.args.get("tail", 100)),
+        previous=request.args.get("previous") == "1",
+    )
+    return render_template("deployment-logs.html", log=log, project_name=request.args.get("project", ""))
+
+
+@app.get("/logs/<namespace>/workloads/<kind>/<workload>")
+@registry_view
+def workload_logs(namespace, kind, workload):
+    log = cluster_kubernetes().workload_logs(
+        namespace,
+        kind,
+        workload,
         container=request.args.get("container"),
         tail_lines=log_tail_lines(request.args.get("tail", 100)),
         previous=request.args.get("previous") == "1",
