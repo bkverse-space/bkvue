@@ -370,7 +370,6 @@ class ClusterKubernetesClient:
             buffer = ""
             yield "retry: 1000\n\n"
             try:
-                # End periodically so reverse proxies cannot leave an idle stream open forever.
                 response = self.api.read_namespaced_pod_log(
                     name,
                     namespace,
@@ -378,7 +377,6 @@ class ClusterKubernetesClient:
                     follow=True,
                     tail_lines=0,
                     timestamps=True,
-                    timeout_seconds=20,
                     _preload_content=False,
                 )
                 while True:
@@ -391,8 +389,9 @@ class ClusterKubernetesClient:
                         yield f"data: {line}\n\n"
                 if buffer:
                     yield f"data: {buffer}\n\n"
-            except ApiException as exc:
-                yield f"event: status\ndata: 无法读取实时日志: {exc.reason}\n\n"
+            except (ApiException, OSError, ValueError) as exc:
+                reason = getattr(exc, "reason", str(exc))
+                yield f"event: status\ndata: 无法读取实时日志: {reason}\n\n"
             finally:
                 if response:
                     response.close()
