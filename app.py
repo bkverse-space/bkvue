@@ -223,9 +223,29 @@ class ArgoCDClient:
         health = status.get("health", {}).get("status", "Unknown")
         history = sorted(status.get("history", []), key=lambda item: item.get("deployedAt", ""), reverse=True)
         operation = status.get("operationState") or {}
+        automated_policy = (spec.get("syncPolicy") or {}).get("automated")
+        automated = automated_policy is not None
+        automated_policy = automated_policy or {}
         deployed_at = (history[0].get("deployedAt") if history else None) or operation.get("finishedAt")
+        desired_revision = status.get("sync", {}).get("revision") or "-"
+        deployed_revision = (
+            operation.get("syncResult", {}).get("revision")
+            or (history[0].get("revision") if history else None)
+            or "-"
+        )
+        declared_sources = spec.get("sources") or ([spec["source"]] if spec.get("source") else [])
+        sources = [
+            {
+                "repository": source.get("repoURL") or "未提供仓库地址",
+                "path": source.get("path") or source.get("chart") or ".",
+                "target_revision": source.get("targetRevision") or "HEAD",
+                "kind": "Git 路径" if source.get("path") else ("Helm Chart" if source.get("chart") else "配置源"),
+            }
+            for source in declared_sources
+        ] or [{"repository": "未提供仓库地址", "path": "-", "target_revision": "-", "kind": "未声明"}]
         images = list(dict.fromkeys(status.get("summary", {}).get("images") or []))
         risk_signals = release_risk_signals(sync, health, images, operation)
+        release = release_stage(sync, health, operation, automated)
         resources = sorted(
             status.get("resources") or [],
             key=lambda resource: (
@@ -242,8 +262,20 @@ class ArgoCDClient:
             "namespace": spec.get("destination", {}).get("namespace") or "未指定",
             "sync": sync,
             "health": health,
-            "revision": status.get("sync", {}).get("revision") or "-",
+            "revision": desired_revision,
+            "desired_revision": desired_revision,
+            "deployed_revision": deployed_revision,
+            "sources": sources,
             "deployed_at": format_created(parse_created(deployed_at)) if deployed_at else "暂无发布记录",
+            "reconciled_at": format_created(parse_created(status.get("reconciledAt"))) if status.get("reconciledAt") else "暂无记录",
+            "operation_phase": operation.get("phase") or "-",
+            "operation_message": operation.get("message") or "-",
+            "release": release,
+            "sync_policy": {
+                "automated": automated,
+                "prune": bool(automated_policy.get("prune")),
+                "self_heal": bool(automated_policy.get("selfHeal")),
+            },
             "images": images,
             "image_versions": [image_tag(image) for image in images],
             "risk_signals": risk_signals,
@@ -791,6 +823,21 @@ def release_risk_signals(sync, health, images, operation):
     return signals
 
 
+def release_stage(sync, health, operation, automated):
+    phase = operation.get("phase")
+    if phase == "Running":
+        return {"key": "syncing", "label": "同步中", "level": "progressing", "description": "Argo CD 正在执行同步操作。"}
+    if phase in {"Failed", "Error"}:
+        return {"key": "failed", "label": "发布异常", "level": "degraded", "description": "最近一次 Argo CD 同步操作失败。"}
+    if sync != "Synced":
+        if automated:
+            return {"key": "waiting_auto_sync", "label": "等待自动同步", "level": "progressing", "description": "Argo CD 已发现配置差异，自动同步策略已启用。"}
+        return {"key": "pending", "label": "配置未同步", "level": "warning", "description": "Argo CD 已发现配置差异，但未启用自动同步。"}
+    if health != "Healthy":
+        return {"key": "verifying", "label": "等待健康", "level": "warning", "description": "同步状态已一致，正在等待资源达到健康状态。"}
+    return {"key": "completed", "label": "发布完成", "level": "healthy", "description": "配置已同步，Application 当前健康。"}
+
+
 def image_created(client, repository, manifest):
     """Get the image build time from its config, with an OCI annotation fallback."""
     created = manifest.get("annotations", {}).get("org.opencontainers.image.created")
@@ -889,6 +936,82 @@ def risk_assessment():
             "warning": sum(project["risk_level"] == "warning" for project in risks),
         },
     )
+
+
+@app.get("/sources")
+@registry_view
+def configuration_sources():
+    query = request.args.get("q", "").strip().lower()
+    applications = argocd().applications()
+    source_rows = []
+    for application in applications:
+        for source in application["sources"]:
+            row = {**source, "application": application}
+            if query and not any(
+                query in value.lower()
+                for value in (
+                    application["name"],
+                    application["project"],
+                    application["namespace"],
+                    source["repository"],
+                    source["path"],
+                )
+            ):
+                continue
+            source_rows.append(row)
+    source_rows.sort(key=lambda row: (row["repository"], row["path"], row["application"]["name"]))
+    repositories = []
+    for row in source_rows:
+        if not repositories or repositories[-1]["repository"] != row["repository"]:
+            repositories.append({"repository": row["repository"], "sources": []})
+        repositories[-1]["sources"].append(row)
+    return render_template(
+        "sources.html",
+        query=query,
+        repositories=repositories,
+        summary={
+            "repositories": len(repositories),
+            "applications": len({row["application"]["name"] for row in source_rows}),
+            "out_of_sync": sum(row["application"]["sync"] != "Synced" for row in source_rows),
+            "unhealthy": sum(row["application"]["health"] != "Healthy" for row in source_rows),
+        },
+    )
+
+
+@app.get("/releases")
+@registry_view
+def release_control():
+    query = request.args.get("q", "").strip().lower()
+    applications = argocd().applications()
+    if query:
+        applications = [
+            application
+            for application in applications
+            if query in application["name"].lower()
+            or query in application["project"].lower()
+            or query in application["namespace"].lower()
+            or query in application["release"]["label"].lower()
+        ]
+    stage_order = {"failed": 0, "pending": 1, "waiting_auto_sync": 2, "syncing": 3, "verifying": 4, "completed": 5}
+    applications.sort(key=lambda application: (stage_order[application["release"]["key"]], application["name"]))
+    return render_template(
+        "releases.html",
+        applications=applications,
+        query=query,
+        summary={
+            "total": len(applications),
+            "waiting": sum(application["release"]["key"] in {"pending", "waiting_auto_sync"} for application in applications),
+            "syncing": sum(application["release"]["key"] == "syncing" for application in applications),
+            "attention": sum(application["release"]["key"] in {"failed", "verifying"} for application in applications),
+        },
+    )
+
+
+@app.get("/releases/<project>")
+@registry_view
+def release_detail(project):
+    application = argocd().application(project)
+    return render_template("release.html", project=application)
 
 
 @app.get("/projects/<project>")

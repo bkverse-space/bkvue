@@ -2,7 +2,7 @@
 {% block title %}项目概览 | 发布工作台{% endblock %}
 {% block content %}
 <section class="page-heading dashboard-heading">
-  <div><p class="eyebrow">Argo CD Applications</p><h1>项目发布概览</h1><p class="muted">只读展示当前发布状态，不执行同步、回滚或配置变更。</p></div>
+  <div><p class="eyebrow">GitOps Delivery Overview</p><h1>项目发布概览</h1><p class="muted">基于 Argo CD、集群和镜像仓库的只读信息，帮助判断配置是否已正确落到运行环境。</p></div>
   <form class="search" method="get"><input name="q" value="{{ query }}" placeholder="搜索 Application、Argo CD Project 或 Namespace" autofocus>{% if project_filter %}<input type="hidden" name="project" value="{{ project_filter }}">{% endif %}<button type="submit">搜索</button></form>
 </section>
 <section class="metrics" aria-label="项目状态统计">

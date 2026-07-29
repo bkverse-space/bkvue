@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}配置源 | 发布工作台{% endblock %}
+{% block content %}
+<section class="page-heading dashboard-heading">
+  <div><p class="eyebrow">GitOps Configuration Sources</p><h1>配置源</h1><p class="muted">按 Argo CD Application 声明的仓库与路径聚合，查看权威配置版本是否已部署并在集群中健康运行。</p></div>
+  <form class="search" method="get"><input name="q" value="{{ query }}" placeholder="搜索仓库、路径、Application、Project 或 Namespace" autofocus><button type="submit">搜索</button></form>
+</section>
+<section class="metrics risk-metrics" aria-label="配置源统计"><div><span>配置仓库</span><strong>{{ summary.repositories }}</strong></div><div><span>关联 Application</span><strong>{{ summary.applications }}</strong></div><div><span>待同步</span><strong class="metric-attention">{{ summary.out_of_sync }}</strong></div><div><span>健康异常</span><strong class="metric-risk">{{ summary.unhealthy }}</strong></div></section>
+{% if repositories %}
+<div class="source-groups">
+{% for repository in repositories %}
+<section class="source-group">
+  <div class="project-group-heading"><h2 title="{{ repository.repository }}">{{ repository.repository }}</h2><span>{{ repository.sources|length }} 个配置声明</span></div>
+  <section class="table-wrap source-table"><table><thead><tr><th>路径或 Chart</th><th>目标 Revision</th><th>Application</th><th>Argo CD Project</th><th>Namespace</th><th>部署版本</th><th>同步</th><th>运行</th></tr></thead><tbody>{% for source in repository.sources %}{% set application = source.application %}<tr><td><code>{{ source.path }}</code><br><small>{{ source.kind }}</small></td><td><code>{{ source.target_revision }}</code></td><td><a class="text-link" href="{{ url_for('project_detail', project=application.name) }}">{{ application.name }}</a></td><td><code>{{ application.project }}</code></td><td><span class="namespace-chip">{{ application.namespace }}</span></td><td><code>{{ application.deployed_revision }}</code></td><td><span class="status {{ application.sync|lower }}">{{ application.sync }}</span></td><td><span class="status {{ application.health|lower }}">{{ application.health }}</span></td></tr>{% endfor %}</tbody></table></section>
+</section>
+{% endfor %}
+</div>
+{% else %}<section class="empty"><h2>未找到配置源</h2><p>请检查 Argo CD Application 是否声明了 source 或 sources，或调整当前搜索条件。</p></section>{% endif %}
+{% endblock %}

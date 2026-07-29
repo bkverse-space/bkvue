@@ -1,11 +1,15 @@
 # bkvue
 
-`bkvue` 是面向单 Kubernetes 集群的只读发布信息工作台。每个 Argo CD `Application` 对应一个项目，工作台从集群内的 Argo CD Application CR 读取当前发布状态，不连接 Git 平台，也不会执行同步、回滚、删除或任何配置变更。
+`bkvue` 是面向单 Kubernetes 集群的 GitOps 信息与决策工作台。每个 Argo CD `Application` 对应一个项目，Git 仓库是集群配置的权威来源，Argo CD 负责收敛，bkvue 只读汇总配置意图、部署结果与运行证据，帮助用户判断配置是否正确落到集群。
+
+bkvue 不是 Kubernetes 管理面，也不是 Git 协作平台：它不执行同步、回滚、删除或配置变更，不创建分支、提交、Merge Request，也不需要连接特定 Git 托管平台。Git 配置始终是唯一权威来源。
 
 ## 功能
 
-- 项目概览：同步状态、健康状态、目标 Namespace、当前 Revision 与最近发布时间
-- 项目详情：当前镜像、工作负载镜像对比、Kubernetes 事件、发布历史与 Argo CD Application 状态
+- 项目概览：按 Argo CD Project 分类展示同步状态、健康状态、目标 Namespace、当前镜像与最近发布时间
+- 配置源：按 Argo CD Application 声明的仓库与路径聚合，关联目标 Revision、Argo 比对 Revision、最近部署 Revision 与运行状态
+- 发布状态：展示 Argo CD 对配置差异的观察、自动同步进度、同步策略、最近比对版本与资源健康收敛状态
+- 项目详情：并列展示配置意图、部署结果、当前镜像、工作负载镜像对比、Kubernetes 事件与发布历史
 - 风险评估：集中展示同步、健康、操作状态与镜像标签带来的发布风险
 - 集群总览：Prometheus 提供的节点、资源使用率和工作负载异常指标
 - 节点详情：节点 Condition、容量、实时利用率和调度 Pod
@@ -18,10 +22,11 @@
 | 信息 | 来源 |
 | --- | --- |
 | 项目、目标 Namespace、同步状态、健康状态、Revision、发布历史、当前镜像 | Argo CD `Application` CR |
+| 配置仓库、路径、目标 Revision、部署 Revision | Argo CD `Application` 的 `spec.source` / `spec.sources` 及状态 |
 | 镜像 tag、大小、镜像层、构建时间 | Docker Registry HTTP API v2 |
 | 集群节点、资源、Pod 与 Deployment 状态 | Prometheus HTTP API |
 
-工作台以 `ARGOCD_NAMESPACE` 中的每个 Application 作为一个项目。目标 Namespace 取自 `spec.destination.namespace`。
+工作台以 `ARGOCD_NAMESPACE` 中的每个 Application 作为一个项目。目标 Namespace 取自 `spec.destination.namespace`。配置源仅按 Application 声明读取：bkvue 不直接克隆仓库、不依赖 GitLab/GitHub/Gitea，也不读取或修改 Merge Request、审批与提交。
 
 ## Kubernetes 权限
 
@@ -34,6 +39,12 @@ kubectl apply -f k8s/rbac.yaml
 工作负载须设置 `serviceAccountName: bkvue`。该 ServiceAccount 在 `argocd` namespace 拥有 `applications.argoproj.io` 的 `get/list/watch` 权限，并通过 ClusterRole 拥有 `nodes`、`pods`、`events`、Deployment、ReplicaSet、StatefulSet、DaemonSet、Job 的 `get/list/watch` 与 `pods/log` 的 `get` 权限。这些权限均为只读。若 Argo CD 不在 `argocd` namespace，请同时修改 Role、RoleBinding 与 `ARGOCD_NAMESPACE`。
 
 默认 Prometheus 地址为 `http://prometheus-server.monitoring.svc:9090`。请按实际 Service 地址修改 `PROMETHEUS_URL`。如果 Prometheus 启用认证，将 Bearer Token 以环境变量或 Kubernetes Secret 注入 `PROMETHEUS_BEARER_TOKEN`；工作台不会写入 Prometheus。
+
+## 发布状态
+
+发布状态仅使用 Argo CD `Application` CR 的只读信息。配置变更后，页面会显示 Argo CD 当前比对的 Revision、最近部署 Revision、最近比对时间、自动同步与自动清理策略、同步操作阶段和资源健康状态，供用户判断是否应继续等待自动收敛。
+
+当 Application 启用了自动同步且处于 `OutOfSync`，bkvue 标记为“等待自动同步”；若未启用自动同步，则标记为“配置未同步”。bkvue 不调用 Argo CD API、不保存 Argo CD 用户名、密码或 Token，也不提供手动 Sync 或 Diff 操作。
 
 ## CI 与镜像发布
 
