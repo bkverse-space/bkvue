@@ -307,6 +307,41 @@ class ClusterKubernetesClient:
         ]
         return summary
 
+    def pod_logs(self, namespace, name, container=None, tail_lines=500, previous=False):
+        try:
+            pod = self.api.read_namespaced_pod(name, namespace)
+        except ApiException as exc:
+            message = "未找到该 Pod。" if exc.status == 404 else f"无法读取 Pod: {exc.reason}"
+            raise RegistryError(message, exc.status) from exc
+
+        containers = [item.name for item in (pod.spec.containers or [])]
+        containers.extend(item.name for item in (pod.spec.init_containers or []))
+        if not containers:
+            raise RegistryError("该 Pod 未包含可读取日志的容器。", 404)
+        selected_container = container or containers[0]
+        if selected_container not in containers:
+            raise RegistryError("指定的容器不属于该 Pod。", 400)
+        try:
+            logs = self.api.read_namespaced_pod_log(
+                name,
+                namespace,
+                container=selected_container,
+                tail_lines=tail_lines,
+                timestamps=True,
+                previous=previous,
+            )
+        except ApiException as exc:
+            raise RegistryError(f"无法读取 Pod 日志: {exc.reason}", exc.status) from exc
+        return {
+            "namespace": namespace,
+            "name": name,
+            "containers": containers,
+            "container": selected_container,
+            "tail_lines": tail_lines,
+            "previous": previous,
+            "logs": logs or "该条件下没有日志输出。",
+        }
+
     @staticmethod
     def _node_summary(node):
         labels = node.metadata.labels or {}
@@ -434,6 +469,13 @@ def apply_node_metrics(nodes, metric_vectors):
         node["cpu_level"] = percent_level(node["cpu_percent"])
         node["memory_level"] = percent_level(node["memory_percent"])
     return nodes
+
+
+def log_tail_lines(value):
+    try:
+        return max(10, min(int(value), 5000))
+    except (TypeError, ValueError):
+        return 500
 
 
 def parse_created(value):
@@ -605,6 +647,19 @@ def node_detail(node_name):
     node = cluster_kubernetes().node(node_name)
     apply_node_metrics([node], node_metric_vectors(prometheus()))
     return render_template("node.html", node=node)
+
+
+@app.get("/logs/<namespace>/<pod>")
+@registry_view
+def pod_logs(namespace, pod):
+    log = cluster_kubernetes().pod_logs(
+        namespace,
+        pod,
+        container=request.args.get("container"),
+        tail_lines=log_tail_lines(request.args.get("tail", 500)),
+        previous=request.args.get("previous") == "1",
+    )
+    return render_template("logs.html", log=log)
 
 
 @app.get("/registry")

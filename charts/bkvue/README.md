@@ -43,5 +43,6 @@ The chart grants only `get`, `list`, and `watch` verbs:
 
 - Argo CD `applications.argoproj.io` in the configured Argo CD namespace
 - Cluster-scoped `nodes` and `pods` when `rbac.readNodesAndPods=true`
+- The `pods/log` subresource with `get` only
 
 Set `rbac.readNodesAndPods=false` when node and pod detail pages are not required.
