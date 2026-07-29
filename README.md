@@ -5,7 +5,8 @@
 ## 功能
 
 - 项目概览：同步状态、健康状态、目标 Namespace、当前 Revision 与最近发布时间
-- 项目详情：当前镜像、发布历史与 Argo CD Application 状态
+- 项目详情：当前镜像、工作负载镜像对比、Kubernetes 事件、发布历史与 Argo CD Application 状态
+- 风险评估：集中展示同步、健康、操作状态与镜像标签带来的发布风险
 - 集群总览：Prometheus 提供的节点、资源使用率和工作负载异常指标
 - 节点详情：节点 Condition、容量、实时利用率和调度 Pod
 - 工作负载日志：选择 Deployment、StatefulSet、DaemonSet、Job 后，再选择其下属 Pod 和容器查看日志；默认实时跟随并定位到日志底部，支持最近 100/500/1000/5000 行与前一实例日志
@@ -22,17 +23,15 @@
 
 工作台以 `ARGOCD_NAMESPACE` 中的每个 Application 作为一个项目。目标 Namespace 取自 `spec.destination.namespace`。
 
-## 集群部署
+## Kubernetes 权限
 
-先构建并推送镜像到你的镜像仓库，再修改 [k8s/workbench.yaml](k8s/workbench.yaml) 的 `image` 和 `REGISTRY_URL`：
+[k8s/rbac.yaml](k8s/rbac.yaml) 只包含 ServiceAccount 与只读 RBAC，不包含 Deployment、Service、Ingress 或 Namespace。请先创建部署所在的 namespace，然后按实际 namespace 修改清单中的 ServiceAccount 与 RoleBinding subject，最后应用：
 
 ```bash
-docker build --build-arg VERSION=v0.1.0 -t registry.example.com/bkvue:v0.1.0 .
-docker push registry.example.com/bkvue:v0.1.0
-kubectl apply -f k8s/workbench.yaml
+kubectl apply -f k8s/rbac.yaml
 ```
 
-清单创建的 ServiceAccount 在 `argocd` namespace 拥有 `applications.argoproj.io` 的 `get/list/watch` 权限，并通过 ClusterRole 拥有 `nodes`、`pods`、Deployment、ReplicaSet、StatefulSet、DaemonSet、Job 的 `get/list/watch` 与 `pods/log` 的 `get` 权限。这些权限均为只读。若 Argo CD 不在 `argocd` namespace，请同时修改 Role、RoleBinding 与 `ARGOCD_NAMESPACE`。
+工作负载须设置 `serviceAccountName: bkvue`。该 ServiceAccount 在 `argocd` namespace 拥有 `applications.argoproj.io` 的 `get/list/watch` 权限，并通过 ClusterRole 拥有 `nodes`、`pods`、`events`、Deployment、ReplicaSet、StatefulSet、DaemonSet、Job 的 `get/list/watch` 与 `pods/log` 的 `get` 权限。这些权限均为只读。若 Argo CD 不在 `argocd` namespace，请同时修改 Role、RoleBinding 与 `ARGOCD_NAMESPACE`。
 
 默认 Prometheus 地址为 `http://prometheus-server.monitoring.svc:9090`。请按实际 Service 地址修改 `PROMETHEUS_URL`。如果 Prometheus 启用认证，将 Bearer Token 以环境变量或 Kubernetes Secret 注入 `PROMETHEUS_BEARER_TOKEN`；工作台不会写入 Prometheus。
 
@@ -66,7 +65,7 @@ Docker Compose 不具备集群内 ServiceAccount 身份。若需要本地读取 
 KUBECONFIG_PATH=/absolute/path/to/kubeconfig docker compose -f docker-compose.yml -f docker-compose.kubeconfig.yml up --build
 ```
 
-正式部署请使用 `k8s/workbench.yaml`，它会自动使用 Pod 的 ServiceAccount。
+正式部署时，请在你的 Deployment、Argo CD Application 或其他部署定义中设置 `serviceAccountName: bkvue`。
 
 ## 环境变量
 

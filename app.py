@@ -1,6 +1,7 @@
 import os
 import re
 import math
+import json
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import quote
@@ -221,9 +222,10 @@ class ArgoCDClient:
         sync = status.get("sync", {}).get("status", "Unknown")
         health = status.get("health", {}).get("status", "Unknown")
         history = sorted(status.get("history", []), key=lambda item: item.get("deployedAt", ""), reverse=True)
-        operation = status.get("operationState", {})
+        operation = status.get("operationState") or {}
         deployed_at = (history[0].get("deployedAt") if history else None) or operation.get("finishedAt")
         images = list(dict.fromkeys(status.get("summary", {}).get("images") or []))
+        risk_signals = release_risk_signals(sync, health, images, operation)
         resources = sorted(
             status.get("resources") or [],
             key=lambda resource: (
@@ -236,6 +238,7 @@ class ArgoCDClient:
         )
         return {
             "name": metadata.get("name", "unknown"),
+            "project": spec.get("project") or "default",
             "namespace": spec.get("destination", {}).get("namespace") or "未指定",
             "sync": sync,
             "health": health,
@@ -243,6 +246,9 @@ class ArgoCDClient:
             "deployed_at": format_created(parse_created(deployed_at)) if deployed_at else "暂无发布记录",
             "images": images,
             "image_versions": [image_tag(image) for image in images],
+            "risk_signals": risk_signals,
+            "has_release_risk": bool(risk_signals),
+            "risk_level": "critical" if any(item["level"] == "critical" for item in risk_signals) else "warning" if risk_signals else "normal",
             "is_ready": sync == "Synced" and health == "Healthy",
             "resources": [
                 {
@@ -485,6 +491,124 @@ class ClusterKubernetesClient:
             result.append(record)
         return sorted(result, key=lambda pod: (pod["namespace"], pod["name"]))
 
+    def workload_versions(self, resources):
+        """Read the live Pod templates for Argo-managed workloads."""
+        readers = {
+            "Deployment": self.apps_api.read_namespaced_deployment,
+            "StatefulSet": self.apps_api.read_namespaced_stateful_set,
+            "DaemonSet": self.apps_api.read_namespaced_daemon_set,
+            "Job": self.batch_api.read_namespaced_job,
+        }
+        versions = []
+        for resource in resources:
+            kind = resource.get("kind")
+            namespace = resource.get("namespace")
+            name = resource.get("name")
+            reader = readers.get(kind)
+            if not reader or not namespace or not name:
+                continue
+            try:
+                workload = reader(name, namespace)
+            except ApiException as exc:
+                if exc.status == 404:
+                    continue
+                raise RegistryError(f"无法读取 {kind}/{name} 的当前镜像: {exc.reason}", exc.status) from exc
+
+            pod_spec = workload.spec.template.spec
+            for container in pod_spec.containers or []:
+                versions.append(self._workload_version(resource, container.name, container.image, False))
+            for container in pod_spec.init_containers or []:
+                versions.append(self._workload_version(resource, container.name, container.image, True))
+        return sorted(versions, key=lambda item: (item["namespace"], item["kind"], item["name"], item["container"]))
+
+    def resource_events(self, resources):
+        """Return recent Events keyed by the Argo resource they belong to."""
+        references = {}
+        events_by_resource = {}
+        for resource in resources:
+            namespace = resource.get("namespace")
+            kind = resource.get("kind")
+            name = resource.get("name")
+            if namespace and namespace != "-" and kind and name:
+                resource_key = self._resource_event_key(namespace, kind, name)
+                events_by_resource[resource_key] = []
+                references.setdefault(namespace, {}).setdefault((kind, name), set()).add(resource_key)
+
+        for pod in self.project_pods(resources):
+            pod_key = self._resource_event_key(pod["namespace"], "Pod", pod["name"])
+            targets = {pod_key} if pod_key in events_by_resource else set()
+            targets.update(
+                self._resource_event_key(pod["namespace"], *workload.split("/", 1))
+                for workload in pod["workloads"]
+                if self._resource_event_key(pod["namespace"], *workload.split("/", 1)) in events_by_resource
+            )
+            if targets:
+                references.setdefault(pod["namespace"], {}).setdefault(("Pod", pod["name"]), set()).update(targets)
+
+        for namespace, resource_refs in references.items():
+            try:
+                events = self.api.list_namespaced_event(namespace, limit=500).items
+            except ApiException as exc:
+                raise RegistryError(f"无法读取 Namespace {namespace} 的事件: {exc.reason}", exc.status) from exc
+            for event in events:
+                involved = getattr(event, "involved_object", None) or getattr(event, "regarding", None)
+                targets = resource_refs.get((involved.kind, involved.name)) if involved else None
+                if not targets:
+                    continue
+                occurred_at = (
+                    getattr(event, "event_time", None)
+                    or getattr(event, "last_timestamp", None)
+                    or getattr(event, "deprecated_last_timestamp", None)
+                    or (event.series.last_observed_time if getattr(event, "series", None) else None)
+                    or event.metadata.creation_timestamp
+                )
+                count = (
+                    (event.series.count if getattr(event, "series", None) else None)
+                    or getattr(event, "count", None)
+                    or getattr(event, "deprecated_count", None)
+                    or 1
+                )
+                source = (
+                    getattr(event, "reporting_controller", None)
+                    or (event.source.component if getattr(event, "source", None) else None)
+                    or (event.deprecated_source.component if getattr(event, "deprecated_source", None) else None)
+                    or "-"
+                )
+                event_summary = {
+                    "occurred_at": format_created(occurred_at) if occurred_at else "时间未知",
+                    "sort_timestamp": occurred_at.timestamp() if occurred_at else 0,
+                    "type": getattr(event, "type", None) or "Normal",
+                    "reason": getattr(event, "reason", None) or "-",
+                    "message": getattr(event, "message", None) or getattr(event, "note", None) or "-",
+                    "source": source,
+                    "count": count,
+                }
+                for target in targets:
+                    events_by_resource[target].append(event_summary.copy())
+
+        for events in events_by_resource.values():
+            events.sort(key=lambda item: item["sort_timestamp"], reverse=True)
+            for event in events:
+                event.pop("sort_timestamp")
+        return events_by_resource
+
+    @staticmethod
+    def _resource_event_key(namespace, kind, name):
+        return f"{namespace}|{kind}|{name}"
+
+    @staticmethod
+    def _workload_version(resource, container, image, init_container):
+        return {
+            "kind": resource["kind"],
+            "name": resource["name"],
+            "namespace": resource["namespace"],
+            "container": f"init/{container}" if init_container else container,
+            "image": image or "-",
+            "version": image_tag(image) if image else "未标记",
+            "sync": resource["sync"],
+            "health": resource["health"],
+        }
+
     @staticmethod
     def _node_summary(node):
         labels = node.metadata.labels or {}
@@ -539,6 +663,13 @@ def registry_view(func):
         try:
             return func(*args, **kwargs)
         except RegistryError as exc:
+            app.logger.warning(
+                "data source request failed method=%s path=%s status=%s error=%s",
+                request.method,
+                request.path,
+                exc.status_code,
+                exc,
+            )
             if request.accept_mimetypes.best == "application/json":
                 return jsonify(error=str(exc)), exc.status_code
             return render_template("error.html", status=exc.status_code, message=str(exc)), exc.status_code
@@ -643,6 +774,23 @@ def image_tag(image):
     return last_segment.rsplit(":", 1)[-1] if ":" in last_segment else "未标记"
 
 
+def release_risk_signals(sync, health, images, operation):
+    """Describe only signals that can be verified from the Application status."""
+    signals = []
+    if sync != "Synced":
+        signals.append({"label": f"同步状态 {sync}", "level": "critical" if sync == "OutOfSync" else "warning"})
+    if health != "Healthy":
+        signals.append({"label": f"健康状态 {health}", "level": "critical" if health == "Degraded" else "warning"})
+    operation_phase = operation.get("phase")
+    if operation_phase in {"Error", "Failed"}:
+        signals.append({"label": f"最近操作 {operation_phase}", "level": "critical"})
+    if not images:
+        signals.append({"label": "未发现当前镜像", "level": "warning"})
+    elif any(image_tag(image).lower() == "latest" for image in images):
+        signals.append({"label": "使用 latest 镜像标签", "level": "warning"})
+    return signals
+
+
 def image_created(client, repository, manifest):
     """Get the image build time from its config, with an OCI annotation fallback."""
     created = manifest.get("annotations", {}).get("org.opencontainers.image.created")
@@ -672,12 +820,18 @@ def common_context():
 def index():
     projects = argocd().applications()
     query = request.args.get("q", "").strip().lower()
-    namespace_filter = request.args.get("namespace", "").strip()
-    namespaces = sorted({project["namespace"] for project in projects})
+    project_filter = request.args.get("project", "").strip()
+    argocd_projects = sorted({project["project"] for project in projects})
     if query:
-        projects = [project for project in projects if query in project["name"].lower() or query in project["namespace"].lower()]
-    if namespace_filter:
-        projects = [project for project in projects if project["namespace"] == namespace_filter]
+        projects = [
+            project
+            for project in projects
+            if query in project["name"].lower()
+            or query in project["project"].lower()
+            or query in project["namespace"].lower()
+        ]
+    if project_filter:
+        projects = [project for project in projects if project["project"] == project_filter]
     projects.sort(key=lambda project: (project["is_ready"], project["name"]))
     summary = {
         "total": len(projects),
@@ -686,26 +840,70 @@ def index():
     }
     project_groups = [
         {
-            "namespace": namespace,
-            "projects": [project for project in projects if project["namespace"] == namespace],
+            "project": argocd_project,
+            "projects": [project for project in projects if project["project"] == argocd_project],
         }
-        for namespace in namespaces
-        if any(project["namespace"] == namespace for project in projects)
+        for argocd_project in argocd_projects
+        if any(project["project"] == argocd_project for project in projects)
     ]
     return render_template(
         "dashboard.html",
         summary=summary,
         query=query,
-        namespaces=namespaces,
-        namespace_filter=namespace_filter,
+        argocd_projects=argocd_projects,
+        project_filter=project_filter,
         project_groups=project_groups,
+    )
+
+
+@app.get("/risks")
+@registry_view
+def risk_assessment():
+    projects = argocd().applications()
+    query = request.args.get("q", "").strip().lower()
+    project_filter = request.args.get("project", "").strip()
+    argocd_projects = sorted({project["project"] for project in projects})
+    if query:
+        projects = [
+            project
+            for project in projects
+            if query in project["name"].lower()
+            or query in project["project"].lower()
+            or query in project["namespace"].lower()
+            or any(query in signal["label"].lower() for signal in project["risk_signals"])
+        ]
+    if project_filter:
+        projects = [project for project in projects if project["project"] == project_filter]
+    risks = [project for project in projects if project["has_release_risk"]]
+    risks.sort(key=lambda project: (project["risk_level"] != "critical", project["project"], project["name"]))
+    return render_template(
+        "risks.html",
+        risks=risks,
+        query=query,
+        project_filter=project_filter,
+        argocd_projects=argocd_projects,
+        summary={
+            "total": len(projects),
+            "risk": len(risks),
+            "critical": sum(project["risk_level"] == "critical" for project in risks),
+            "warning": sum(project["risk_level"] == "warning" for project in risks),
+        },
     )
 
 
 @app.get("/projects/<project>")
 @registry_view
 def project_detail(project):
-    return render_template("project.html", project=argocd().application(project))
+    application = argocd().application(project)
+    client = cluster_kubernetes()
+    application["workload_versions"] = client.workload_versions(application["resources"])
+    application["version_tags"] = sorted({item["version"] for item in application["workload_versions"]})
+    events_by_resource = client.resource_events(application["resources"])
+    for resource in application["resources"]:
+        resource["events"] = events_by_resource.get(
+            client._resource_event_key(resource["namespace"], resource["kind"], resource["name"]), []
+        )
+    return render_template("project.html", project=application)
 
 
 @app.get("/projects/<project>/logs")
@@ -831,6 +1029,11 @@ def cluster_status():
         },
     ]
     return render_template("cluster.html", node_summary=node_summary, metric_groups=metric_groups, prometheus_url=client.base_url)
+
+
+@app.get("/traffic")
+def traffic_topology():
+    return render_template("traffic.html")
 
 
 @app.get("/cluster/nodes")
