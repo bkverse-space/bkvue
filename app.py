@@ -353,93 +353,6 @@ class ClusterKubernetesClient:
             "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
         }
 
-    def workload_logs(self, namespace, kind, name, container=None, tail_lines=500, previous=False):
-        """Read a workload's current Pods without interleaving their log streams."""
-        kinds = {
-            "deployment": "Deployment",
-            "statefulset": "StatefulSet",
-            "daemonset": "DaemonSet",
-            "job": "Job",
-        }
-        resource_kind = kinds.get(kind.lower())
-        if not resource_kind:
-            raise RegistryError("仅支持 Deployment、StatefulSet、DaemonSet 和 Job 的聚合日志。", 400)
-        try:
-            pods = self.api.list_namespaced_pod(namespace).items
-            if resource_kind == "Deployment":
-                workload = self.apps_api.read_namespaced_deployment(name, namespace)
-                replica_sets = self.apps_api.list_namespaced_replica_set(namespace).items
-            elif resource_kind == "StatefulSet":
-                workload = self.apps_api.read_namespaced_stateful_set(name, namespace)
-                replica_sets = []
-            elif resource_kind == "DaemonSet":
-                workload = self.apps_api.read_namespaced_daemon_set(name, namespace)
-                replica_sets = []
-            else:
-                workload = self.batch_api.read_namespaced_job(name, namespace)
-                replica_sets = []
-        except ApiException as exc:
-            message = f"未找到该 {resource_kind or '工作负载'}。" if exc.status == 404 else f"无法读取 {resource_kind or '工作负载'}: {exc.reason}"
-            raise RegistryError(message, exc.status) from exc
-
-        def owner_uids(resource):
-            return {reference.uid for reference in (resource.metadata.owner_references or []) if reference.uid}
-
-        replica_set_uids = {replica_set.metadata.uid for replica_set in replica_sets if workload.metadata.uid in owner_uids(replica_set)}
-        workload_uids = replica_set_uids if resource_kind == "Deployment" else {workload.metadata.uid}
-        pods = sorted(
-            [pod for pod in pods if owner_uids(pod) & workload_uids],
-            key=lambda pod: pod.metadata.name,
-        )
-        containers = list(dict.fromkeys(item.name for pod in pods for item in (pod.spec.containers or [])))
-        if container and container not in containers:
-            raise RegistryError(f"指定的容器不属于该 {resource_kind} 的当前 Pod。", 400)
-        selected_container = container or (containers[0] if containers else None)
-        records = []
-        for pod in pods:
-            pod_containers = {item.name for item in (pod.spec.containers or [])}
-            record = {
-                "name": pod.metadata.name,
-                "phase": pod.status.phase or "Unknown",
-                "restarts": sum(status.restart_count or 0 for status in (pod.status.container_statuses or [])),
-                "node_name": pod.spec.node_name or "-",
-                "has_container": selected_container in pod_containers if selected_container else False,
-            }
-            if not record["has_container"]:
-                record["logs"] = "该 Pod 不包含当前选择的容器。"
-                record["line_count"] = 0
-            else:
-                try:
-                    logs = self.api.read_namespaced_pod_log(
-                        pod.metadata.name,
-                        namespace,
-                        container=selected_container,
-                        tail_lines=tail_lines,
-                        timestamps=True,
-                        previous=previous,
-                    ) or "该条件下没有日志输出。"
-                    record["logs"] = logs
-                    record["line_count"] = len(logs.splitlines())
-                except ApiException as exc:
-                    record["logs"] = f"无法读取该 Pod 日志: {exc.reason}"
-                    record["line_count"] = 0
-            records.append(record)
-        return {
-            "namespace": namespace,
-            "kind": resource_kind,
-            "name": name,
-            "containers": containers,
-            "container": selected_container,
-            "tail_lines": tail_lines,
-            "previous": previous,
-            "pods": records,
-            "read_at": datetime.now(DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M UTC+8"),
-        }
-
-    def deployment_logs(self, namespace, name, container=None, tail_lines=500, previous=False):
-        """Compatibility wrapper for the original Deployment log route."""
-        return self.workload_logs(namespace, "deployment", name, container, tail_lines, previous)
-
     def project_pods(self, resources):
         """Resolve Argo-managed workloads to their runtime Pods via owner references."""
         pod_cache = {}
@@ -755,7 +668,6 @@ def project_detail(project):
 def project_logs(project):
     application = argocd().application(project)
     client = cluster_kubernetes()
-    pods = client.project_pods(application["resources"])
     workload_options = [
         {
             "target": f"{resource['namespace']}|{resource['kind']}|{resource['name']}",
@@ -764,33 +676,33 @@ def project_logs(project):
         for resource in application["resources"]
         if resource["kind"] in {"Deployment", "StatefulSet", "DaemonSet", "Job"}
     ]
-    pod_options = [
+    target = request.args.get("target") or (workload_options[0]["target"] if workload_options else "")
+    if target not in {option["target"] for option in workload_options}:
+        target = workload_options[0]["target"] if workload_options else ""
+    pod_options = []
+    if target:
+        namespace, kind, workload_name = target.split("|", 2)
+        workload_ref = f"{kind}/{workload_name}"
+        selected_resources = [
+            resource
+            for resource in application["resources"]
+            if resource["namespace"] == namespace and resource["kind"] == kind and resource["name"] == workload_name
+        ]
+        pods = client.project_pods(selected_resources)
+        pod_options = [
         {
             "target": f"{pod['namespace']}|{pod['name']}",
             "label": f"{pod['namespace']}/{pod['name']}",
         }
         for pod in pods
+        if pod["namespace"] == namespace and workload_ref in pod["workloads"]
     ]
-    mode = request.args.get("mode", "workload")
-    if mode not in {"workload", "pod"}:
-        mode = "workload"
-    options = workload_options if mode == "workload" else pod_options
-    target = request.args.get("target") or (options[0]["target"] if options else "")
-    if target not in {option["target"] for option in options}:
-        target = options[0]["target"] if options else ""
+    pod_target = request.args.get("pod") or (pod_options[0]["target"] if pod_options else "")
+    if pod_target not in {option["target"] for option in pod_options}:
+        pod_target = pod_options[0]["target"] if pod_options else ""
     log = None
-    if target and mode == "workload":
-        namespace, kind, name = target.split("|", 2)
-        log = client.workload_logs(
-            namespace,
-            kind,
-            name,
-            container=request.args.get("container"),
-            tail_lines=log_tail_lines(request.args.get("tail", 100)),
-            previous=request.args.get("previous") == "1",
-        )
-    elif target:
-        namespace, name = target.split("|", 1)
+    if pod_target:
+        namespace, name = pod_target.split("|", 1)
         log = client.pod_logs(
             namespace,
             name,
@@ -801,11 +713,10 @@ def project_logs(project):
     return render_template(
         "project-logs.html",
         project=application,
-        mode=mode,
         target=target,
-        options=options,
-        has_workloads=bool(workload_options),
-        has_pods=bool(pod_options),
+        pod_target=pod_target,
+        workload_options=workload_options,
+        pod_options=pod_options,
         log=log,
     )
 
@@ -905,33 +816,6 @@ def pod_logs(namespace, pod):
         previous=request.args.get("previous") == "1",
     )
     return render_template("logs.html", log=log, project_name=request.args.get("project", ""))
-
-
-@app.get("/logs/<namespace>/deployments/<deployment>")
-@registry_view
-def deployment_logs(namespace, deployment):
-    log = cluster_kubernetes().deployment_logs(
-        namespace,
-        deployment,
-        container=request.args.get("container"),
-        tail_lines=log_tail_lines(request.args.get("tail", 100)),
-        previous=request.args.get("previous") == "1",
-    )
-    return render_template("deployment-logs.html", log=log, project_name=request.args.get("project", ""))
-
-
-@app.get("/logs/<namespace>/workloads/<kind>/<workload>")
-@registry_view
-def workload_logs(namespace, kind, workload):
-    log = cluster_kubernetes().workload_logs(
-        namespace,
-        kind,
-        workload,
-        container=request.args.get("container"),
-        tail_lines=log_tail_lines(request.args.get("tail", 100)),
-        previous=request.args.get("previous") == "1",
-    )
-    return render_template("deployment-logs.html", log=log, project_name=request.args.get("project", ""))
 
 
 @app.get("/registry")
